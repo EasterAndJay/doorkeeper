@@ -1,12 +1,13 @@
 module Doorkeeper
   module Models
     module Scopes
+
       def scopes
-        OAuth::Scopes.from_string(self[:scopes])
+        OAuth::Scopes.from_string(@scopes)
       end
 
       def scopes_string
-        self[:scopes]
+        @scopes
       end
 
       def includes_scope?(*required_scopes)

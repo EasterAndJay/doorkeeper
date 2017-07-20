@@ -9,30 +9,6 @@ module Doorkeeper
     include Models::Scopes
     include ActiveModel::MassAssignmentSecurity if defined?(::ProtectedAttributes)
 
-    included do
-      belongs_to_options = {
-        class_name: 'Doorkeeper::Application',
-        inverse_of: :access_tokens
-      }
-      if defined?(ActiveRecord::Base) && ActiveRecord::VERSION::MAJOR >= 5
-        belongs_to_options[:optional] = true
-      end
-
-      belongs_to :application, belongs_to_options
-
-      validates :token, presence: true, uniqueness: true
-      validates :refresh_token, uniqueness: true, if: :use_refresh_token?
-
-      # @attr_writer [Boolean, nil] use_refresh_token
-      #   indicates the possibility of using refresh token
-      attr_writer :use_refresh_token
-
-      before_validation :generate_token, on: :create
-      before_validation :generate_refresh_token,
-                        on: :create,
-                        if: :use_refresh_token?
-    end
-
     module ClassMethods
       # Returns an instance of the Doorkeeper::AccessToken with
       # specific token value.
@@ -43,61 +19,49 @@ module Doorkeeper
       # @return [Doorkeeper::AccessToken, nil] AccessToken object or nil
       #   if there is no record with such token
       #
-      def by_token(token)
-        find_by(token: token.to_s)
+
+      def decode(jwt)
+        secret_key = Doorkeeper::JWT.configuration.secret_key
+        algorithm = Doorkeeper::JWT.configuration.encryption_method
+        JWT.decode(jwt, secret_key, true, { :algorithm => algorithm }).first
+      rescue JWT::DecodeError
+        nil
+      rescue JWT::ExpiredSignature
+        nil
       end
 
-      # Returns an instance of the Doorkeeper::AccessToken
-      # with specific token value.
-      #
-      # @param refresh_token [#to_s]
-      #   refresh token value (any object that responds to `#to_s`)
-      #
-      # @return [Doorkeeper::AccessToken, nil] AccessToken object or nil
-      #   if there is no record with such refresh token
-      #
-      def by_refresh_token(refresh_token)
-        find_by(refresh_token: refresh_token.to_s)
-      end
-
-      # Revokes AccessToken records that have not been revoked and associated
-      # with the specific Application and Resource Owner.
-      #
-      # @param application_id [Integer]
-      #   ID of the Application
-      # @param resource_owner [ActiveRecord::Base]
-      #   instance of the Resource Owner model
-      #
-      def revoke_all_for(application_id, resource_owner)
-        where(application_id: application_id,
-              resource_owner_id: resource_owner.id,
-              revoked_at: nil).
-          each(&:revoke)
-      end
-
-      # Looking for not expired Access Token with a matching set of scopes
-      # that belongs to specific Application and Resource Owner.
-      #
-      # @param application [Doorkeeper::Application]
-      #   Application instance
-      # @param resource_owner_or_id [ActiveRecord::Base, Integer]
-      #   Resource Owner model instance or it's ID
-      # @param scopes [String, Doorkeeper::OAuth::Scopes]
-      #   set of scopes
-      #
-      # @return [Doorkeeper::AccessToken, nil] Access Token instance or
-      #   nil if matching record was not found
-      #
-      def matching_token_for(application, resource_owner_or_id, scopes)
-        resource_owner_id = if resource_owner_or_id.respond_to?(:to_key)
-                              resource_owner_or_id.id
-                            else
-                              resource_owner_or_id
-                            end
-        token = last_authorized_token_for(application.try(:id), resource_owner_id)
-        if token && scopes_match?(token.scopes, scopes, application.try(:scopes))
-          token
+      def new_by_jwt(jwt)
+        payload = self.decode(jwt)
+        tok = new(
+          application_id: payload[:client_id],
+          resource_owner_id: User.find_by_email(payload[:user][:email]).id,
+          scopes: payload[:scopes],
+          created_at: Time.at(payload[:iat]).to_datetime.utc,
+          expires_in: payload[:exp] - payload[:iat],
+          use_refresh_token: Doorkeeper.configuration.use_refresh_token
+        )
+        if payload[:type] == :access
+          tok.token = jwt
+        else
+          tok.refresh_token = jwt
         end
+        tok
+      end
+
+      def by_token(token)
+        self.new_by_jwt(token)
+      end
+
+      def by_refresh_token(refresh_token)
+        self.new_by_jwt(refresh_token)
+      end
+
+      def revoke_all_for(application_id, resource_owner)
+        # no op
+      end
+
+      def matching_token_for(application, resource_owner_or_id, scopes)
+        nil
       end
 
       # Checks whether the token scopes match the scopes from the parameters or
@@ -122,57 +86,65 @@ module Doorkeeper
           )
       end
 
-      # Looking for not expired AccessToken record with a matching set of
-      # scopes that belongs to specific Application and Resource Owner.
-      # If it doesn't exists - then creates it.
-      #
-      # @param application [Doorkeeper::Application]
-      #   Application instance
-      # @param resource_owner_id [ActiveRecord::Base, Integer]
-      #   Resource Owner model instance or it's ID
-      # @param scopes [#to_s]
-      #   set of scopes (any object that responds to `#to_s`)
-      # @param expires_in [Integer]
-      #   token lifetime in seconds
-      # @param use_refresh_token [Boolean]
-      #   whether to use the refresh token
-      #
-      # @return [Doorkeeper::AccessToken] existing record or a new one
-      #
       def find_or_create_for(application, resource_owner_id, scopes, expires_in, use_refresh_token)
-        if Doorkeeper.configuration.reuse_access_token
-          access_token = matching_token_for(application, resource_owner_id, scopes)
-          if access_token && !access_token.expired?
-            return access_token
-          end
-        end
-
-        create!(
-          application_id:    application.try(:id),
+        tok = new(
+          application_id: application.try(:id),
           resource_owner_id: resource_owner_id,
-          scopes:            scopes.to_s,
-          expires_in:        expires_in,
+          scopes: scopes.to_s,
+          created_at: Time.now.utc,
+          expires_in: expires_in,
           use_refresh_token: use_refresh_token
         )
+        tok.generate_tokens
+        tok
       end
 
-      # Looking for not revoked Access Token record that belongs to specific
-      # Application and Resource Owner.
-      #
-      # @param application_id [Integer]
-      #   ID of the Application model instance
-      # @param resource_owner_id [Integer]
-      #   ID of the Resource Owner model instance
-      #
-      # @return [Doorkeeper::AccessToken, nil] matching AccessToken object or
-      #   nil if nothing was found
-      #
-      def last_authorized_token_for(application_id, resource_owner_id)
-        send(order_method, created_at_desc).
-          find_by(application_id: application_id,
-                  resource_owner_id: resource_owner_id,
-                  revoked_at: nil)
+      def create!(attributes)
+        # Code smell here...need to look into attirbutes
+        attributes[:created_at] = Time.now.utc
+        tok = new(attributes)
+        tok.generate_token
+        tok
       end
+
+      def last_authorized_token_for(application_id, resource_owner_id)
+        nil
+      end
+
+    end
+
+    # Generates and sets the token value with the
+    # configured Generator class (see Doorkeeper.configuration).
+    #
+    # @return [String] generated token value
+    #
+    # @raise [Doorkeeper::Errors::UnableToGenerateToken]
+    #   custom class doesn't implement .generate method
+    # @raise [Doorkeeper::Errors::TokenGeneratorNotFound]
+    #   custom class doesn't exist
+    #
+    def generate_tokens
+      generator = Doorkeeper.configuration.access_token_generator.constantize
+      self.token = generator.generate(
+        resource_owner_id: resource_owner_id,
+        scopes: scopes,
+        application_id: application_id,
+        type: :access,
+        created_at: created_at,
+        expires_in: expires_in
+      )
+      self.refresh_token = generator.generate(
+        resource_owner_id: resource_owner_id,
+        scopes: scopes,
+        application_id: application_id,
+        type: :refresh,
+        created_at: created_at,
+        expires_in: expires_in
+      )
+      rescue NoMethodError
+        raise Errors::UnableToGenerateToken, "#{generator} does not respond to `.generate`."
+      rescue NameError
+        raise Errors::TokenGeneratorNotFound, "#{generator} not found"
     end
 
     # Access Token type: Bearer.
@@ -226,39 +198,6 @@ module Doorkeeper
 
     private
 
-    # Generates refresh token with UniqueToken generator.
-    #
-    # @return [String] refresh token value
-    #
-    def generate_refresh_token
-      write_attribute :refresh_token, UniqueToken.generate
-    end
 
-    # Generates and sets the token value with the
-    # configured Generator class (see Doorkeeper.configuration).
-    #
-    # @return [String] generated token value
-    #
-    # @raise [Doorkeeper::Errors::UnableToGenerateToken]
-    #   custom class doesn't implement .generate method
-    # @raise [Doorkeeper::Errors::TokenGeneratorNotFound]
-    #   custom class doesn't exist
-    #
-    def generate_token
-      self.created_at ||= Time.now.utc
-
-      generator = Doorkeeper.configuration.access_token_generator.constantize
-      self.token = generator.generate(
-        resource_owner_id: resource_owner_id,
-        scopes: scopes,
-        application: application,
-        expires_in: expires_in,
-        created_at: created_at
-      )
-    rescue NoMethodError
-      raise Errors::UnableToGenerateToken, "#{generator} does not respond to `.generate`."
-    rescue NameError
-      raise Errors::TokenGeneratorNotFound, "#{generator} not found"
-    end
   end
 end
