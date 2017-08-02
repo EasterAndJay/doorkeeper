@@ -141,10 +141,6 @@ module Doorkeeper
         created_at: created_at,
         expires_in: expires_in
       )
-      rescue NoMethodError
-        raise Errors::UnableToGenerateToken, "#{generator} does not respond to `.generate`."
-      rescue NameError
-        raise Errors::TokenGeneratorNotFound, "#{generator} not found"
     end
 
     # Access Token type: Bearer.
