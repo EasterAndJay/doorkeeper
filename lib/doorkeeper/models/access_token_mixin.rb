@@ -34,6 +34,7 @@ module Doorkeeper
         payload = self.decode(jwt)
         tok = new(
           application_id: payload[:client_id],
+          application_uid: payload[:client_uid],
           resource_owner_id: User.find_by_email(payload[:user][:email]).id,
           scopes: payload[:scopes],
           created_at: Time.at(payload[:iat]).to_datetime.utc,
@@ -89,6 +90,7 @@ module Doorkeeper
       def find_or_create_for(application, resource_owner_id, scopes, expires_in, use_refresh_token)
         tok = new(
           application_id: application.try(:id),
+          application_uid: application.try(:uid),
           resource_owner_id: resource_owner_id,
           scopes: scopes.to_s,
           created_at: Time.now.utc,
@@ -100,8 +102,6 @@ module Doorkeeper
       end
 
       def create!(attributes)
-        # Code smell here...need to look into attirbutes
-        attributes[:created_at] = Time.now.utc
         tok = new(attributes)
         tok.generate_token
         tok
@@ -129,6 +129,7 @@ module Doorkeeper
         resource_owner_id: resource_owner_id,
         scopes: scopes,
         application_id: application_id,
+        application_uid: application_uid,
         type: :access,
         created_at: created_at,
         expires_in: expires_in
@@ -137,6 +138,7 @@ module Doorkeeper
         resource_owner_id: resource_owner_id,
         scopes: scopes,
         application_id: application_id,
+        application_uid: application_uid,
         type: :refresh,
         created_at: created_at,
         expires_in: expires_in

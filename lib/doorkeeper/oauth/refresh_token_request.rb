@@ -52,12 +52,16 @@ module Doorkeeper
       def access_token_attributes
         {
           application_id: refresh_token.application_id,
+          application_uid: refresh_token.application_uid,
           resource_owner_id: refresh_token.resource_owner_id,
           scopes: scopes.to_s,
+          created_at: Time.now.utc,
           expires_in: access_token_expires_in,
           use_refresh_token: true
         }.tap do |attributes|
           if refresh_token_revoked_on_use?
+            # TODO: Will probably crash when using refresh token
+            # Will need to figure out revocation logic
             attributes[:previous_refresh_token] = refresh_token.refresh_token
           end
         end
