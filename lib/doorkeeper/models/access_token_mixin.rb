@@ -37,6 +37,7 @@ module Doorkeeper
           application_uid: payload['client_uid'],
           resource_owner_id: User.find_by_email(payload['user']['email']).id,
           scopes: payload['scopes'],
+          type: payload['type'],
           created_at: Time.at(payload['iat']).to_datetime.utc,
           expires_in: payload['exp'] - payload['iat'],
           use_refresh_token: Doorkeeper.configuration.refresh_token_enabled?
@@ -55,10 +56,6 @@ module Doorkeeper
 
       def by_refresh_token(refresh_token)
         self.new_by_jwt(refresh_token)
-      end
-
-      def revoke_all_for(application_id, resource_owner)
-        # no op
       end
 
       def matching_token_for(application, resource_owner_or_id, scopes)
@@ -103,7 +100,7 @@ module Doorkeeper
 
       def create!(attributes)
         tok = new(attributes)
-        tok.generate_token
+        tok.generate_tokens
         tok
       end
 
@@ -111,6 +108,24 @@ module Doorkeeper
         nil
       end
 
+    end
+
+    def revoke
+      return unless type.to_sym == :refresh
+      RevokedToken.create!(token: refresh_token)
+    end
+
+
+    def revoke_all_for(application_id, resource_owner)
+      # no op
+    end
+
+    def revoked?
+      Doorkeeper::RevokedToken.find_by_token(token)
+    end
+
+    def revoke_previous_refresh_token!
+      # no op
     end
 
     # Generates and sets the token value with the

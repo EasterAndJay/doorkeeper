@@ -28,13 +28,9 @@ module Doorkeeper
       private
 
       def before_successful_response
-        refresh_token.transaction do
-          refresh_token.lock!
-          raise Errors::InvalidTokenReuse if refresh_token.revoked?
-
-          refresh_token.revoke unless refresh_token_revoked_on_use?
-          create_access_token
-        end
+        raise Errors::InvalidTokenReuse if refresh_token.revoked?
+        refresh_token.revoke unless refresh_token_revoked_on_use?
+        create_access_token
       end
 
       def refresh_token_revoked_on_use?
@@ -58,13 +54,7 @@ module Doorkeeper
           created_at: Time.now.utc,
           expires_in: access_token_expires_in,
           use_refresh_token: true
-        }.tap do |attributes|
-          if refresh_token_revoked_on_use?
-            # TODO: Will probably crash when using refresh token
-            # Will need to figure out revocation logic
-            attributes[:previous_refresh_token] = refresh_token.refresh_token
-          end
-        end
+        }
       end
 
       def access_token_expires_in
@@ -84,7 +74,7 @@ module Doorkeeper
       end
 
       def validate_client_match
-        !client || refresh_token.application_id == client.id
+        !client || refresh_token.application_uid == client.uid
       end
 
       def validate_scope
