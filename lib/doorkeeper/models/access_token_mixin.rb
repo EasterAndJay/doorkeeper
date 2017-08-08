@@ -23,10 +23,10 @@ module Doorkeeper
       def decode(jwt)
         secret_key = Doorkeeper::JWT.configuration.secret_key
         algorithm = Doorkeeper::JWT.configuration.encryption_method
-        JWT.decode(jwt, secret_key, true, { :algorithm => algorithm }).first
-      rescue JWT::DecodeError
+        ::JWT.decode(jwt, secret_key, true, { :algorithm => algorithm }).first
+      rescue ::JWT::DecodeError
         nil
-      rescue JWT::ExpiredSignature
+      rescue ::JWT::ExpiredSignature
         nil
       end
 
