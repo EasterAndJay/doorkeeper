@@ -22,7 +22,7 @@ module Doorkeeper
 
       def decode(jwt)
         secret_key = Doorkeeper::JWT.configuration.secret_key
-        algorithm = Doorkeeper::JWT.configuration.encryption_method
+        algorithm = Doorkeeper::JWT.configuration.encryption_method.to_s.upcase
         ::JWT.decode(jwt, secret_key, true, { :algorithm => algorithm }).first
       rescue ::JWT::DecodeError
         nil
@@ -33,15 +33,15 @@ module Doorkeeper
       def new_by_jwt(jwt)
         payload = self.decode(jwt)
         tok = new(
-          application_id: payload[:client_id],
-          application_uid: payload[:client_uid],
-          resource_owner_id: User.find_by_email(payload[:user][:email]).id,
-          scopes: payload[:scopes],
-          created_at: Time.at(payload[:iat]).to_datetime.utc,
-          expires_in: payload[:exp] - payload[:iat],
-          use_refresh_token: Doorkeeper.configuration.use_refresh_token
+          application_id: nil,
+          application_uid: payload['client_uid'],
+          resource_owner_id: User.find_by_email(payload['user']['email']).id,
+          scopes: payload['scopes'],
+          created_at: Time.at(payload['iat']).to_datetime.utc,
+          expires_in: payload['exp'] - payload['iat'],
+          use_refresh_token: Doorkeeper.configuration.refresh_token_enabled?
         )
-        if payload[:type] == :access
+        if payload['type'] == 'access'
           tok.token = jwt
         else
           tok.refresh_token = jwt
@@ -128,7 +128,6 @@ module Doorkeeper
       self.token = generator.generate(
         resource_owner_id: resource_owner_id,
         scopes: scopes,
-        application_id: application_id,
         application_uid: application_uid,
         type: :access,
         created_at: created_at,
@@ -137,7 +136,6 @@ module Doorkeeper
       self.refresh_token = generator.generate(
         resource_owner_id: resource_owner_id,
         scopes: scopes,
-        application_id: application_id,
         application_uid: application_uid,
         type: :refresh,
         created_at: created_at,
