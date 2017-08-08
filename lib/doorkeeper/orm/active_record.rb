@@ -5,9 +5,10 @@ module Doorkeeper
         require 'doorkeeper/orm/active_record/access_grant'
         require 'doorkeeper/orm/active_record/access_token'
         require 'doorkeeper/orm/active_record/application'
+        require 'doorkeeper/orm/active_record/revoked_token'
 
         if Doorkeeper.configuration.active_record_options[:establish_connection]
-          [Doorkeeper::AccessGrant, Doorkeeper::AccessToken, Doorkeeper::Application].each do |c|
+          [Doorkeeper::AccessGrant, Doorkeeper::AccessToken, Doorkeeper::Application, Doorkeeper::RevokedToken].each do |c|
             c.send :establish_connection, Doorkeeper.configuration.active_record_options[:establish_connection]
           end
         end
