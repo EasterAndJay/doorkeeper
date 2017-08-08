@@ -32,6 +32,7 @@ module Doorkeeper
 
       def new_by_jwt(jwt)
         payload = self.decode(jwt)
+        return nil unless payload
         tok = new(
           application_id: nil,
           application_uid: payload['client_uid'],
