@@ -121,7 +121,7 @@ module Doorkeeper
     end
 
     def revoked?
-      Doorkeeper::RevokedToken.find_by_token(token)
+      Doorkeeper::RevokedToken.find_by_token(refresh_token).present?
     end
 
     def revoke_previous_refresh_token!
