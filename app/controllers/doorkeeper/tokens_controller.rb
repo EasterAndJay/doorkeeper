@@ -49,9 +49,9 @@ module Doorkeeper
       if token.present?
         # Client is confidential, therefore client authentication & authorization
         # is required
-        if token.application_id?
+        if token.application_uid
           # We authorize client by checking token's application
-          server.client && server.client.application == token.application
+          server.client && server.client.application.uid == token.application_uid
         else
           # Client is public, authentication unnecessary
           true
