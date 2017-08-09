@@ -35,8 +35,8 @@ module Doorkeeper
         return nil unless payload
         tok = new(
           application_id: nil,
-          application_uid: payload['client_uid'],
-          resource_owner_id: User.find_by_email(payload['user']['email']).id,
+          application_uid: payload['client_uid'] || payload['sub'],
+          resource_owner_id: User.find_by_email(payload['sub']).try(:id),
           scopes: payload['scopes'],
           type: payload['type'],
           created_at: Time.at(payload['iat']).to_datetime.utc,
