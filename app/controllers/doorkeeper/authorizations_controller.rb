@@ -1,6 +1,7 @@
 module Doorkeeper
   class AuthorizationsController < Doorkeeper::ApplicationController
     before_action :authenticate_resource_owner!
+    skip_before_action :verify_authenticity_token, only: [:create]
 
     def new
       if pre_auth.authorizable?

@@ -1,5 +1,6 @@
 module Doorkeeper
   class TokensController < Doorkeeper::ApplicationMetalController
+    
     def create
       response = authorize_response
       headers.merge! response.headers
